@@ -1,0 +1,138 @@
+---
+title: "Predicted Probabilities"
+author: "AJ Thurston"
+format: html
+---
+
+## Introduction
+
+Logistic regression is used to model the relationship between a dependent categorical, binary variable (e.g., pass or fail) and one or more independent continuous or categorical variables. In industrial and organizational psychology a common use of logistic regression is to predict turnover using predictors such as job satisfaction, age, and organizational tenure. These models can be rather simple, but results for logistic regressions can be difficult to interpret, especially for non-technical audiences.
+
+Traditionally, the results of logistic regression are presented in the form of odds ratios. An odds ratio indicates how the odds of the outcome change with a one-unit increase in the predictor variable. A number above 1 indicates higher odds and values less than 1 indicates lower odds. For example, consider a model which uses sex to predict turnover resulting in an odds ratio of 1.2 between males vs. females. This tells us that the odds of a turnover event occurring are 1.2 times higher for females than for males. This is simple enough for categorical predictors, but for continuous predictors the interpretation is a bit more complicated. Consider another example where job satisfaction is used to predict turnover and results in an odds ratio of .75. This now requires a bit of math to interpret in the same way as group differences, suggesting for every 1 unit increase in job satisfaction, the odds of turnover are reduced by 25% (1-.75). This unituitive interpretation becomes increasingly complicated as most logistic regression models have multiple predictors, and the odds only account for the effect of that specific predictor when all other predictors remain constant.
+
+This complexity can make for misinterpretation of the results by technical and non-technical audiences alike. As an alternative, predicted probabilities provide a more straightforward approach to presenting the results of a logistic regression. 
+
+###----
+SOME OTHER THOUGHTS
+###---
+Predicted probabilities translate the statistical outputs into the likelihood of an event occurring, expressed in familiar terms like percentages. For instance, telling a patient that they have a 20% chance of developing a condition is far more comprehensible than stating that the odds are 0.25. This clarity makes the information more accessible and actionable for decision-makers, stakeholders, and the general public.
+
+Using predicted probabilities also addresses a common issue with odds ratios, where the magnitude of the odds can be misleading, especially when the probability of an event is low. This can lead to exaggerated perceptions of risk and potentially misguided decisions. By presenting probabilities directly, we provide a clearer and more accurate picture of risk, helping to avoid such pitfalls.
+
+## Example
+
+Designing an example using the Human Resources Dataset from Kaggle: https://rpubs.com/rhuebner/hrd_cb_v14
+
+```{r setup}
+library(summarytools)
+library(tidyverse)
+library(caret)
+library(pscl)
+```
+
+```{r data}
+df <- read.csv("datagen/turnover.csv")
+df <- df %>%
+  mutate(high_jobsat = recode(
+    jobsat, 
+    `1` = 0,
+    `2` = 0,
+    `3` = 0,
+    `4` = 1,
+    `5` = 1)
+  )
+```
+
+## Traditional Logistic Regression
+
+This is where I'll design an example
+
+```{r glm}
+mod1 <- glm(turnover ~ high_jobsat + refer, df, family = "binomial")
+
+summary(mod1)
+
+anova(mod1, test = "Chisq")
+
+1-pchisq(mod1$null.deviance-mod1$deviance,2)
+
+pR2(mod1)
+
+exp(cbind(OR = coef(mod1), confint(mod1)))
+```
+```{r accuracy}
+df <- df %>%
+  mutate(pred_probs = predict(mod1, type = "response")) %>%
+  mutate(pred_class = ifelse(pred_probs > mean(turnover), 1, 0))
+
+# Create a confusion matrix
+cm <- table(df$pred_class,df$turnover)
+
+# Calculate accuracy
+acc_overall <- sum(diag(cm))/sum(cm)
+acc_overall
+
+acc_sens <- cm[2,2]/sum(cm[,2])
+acc_sens
+
+acc_spec <- cm[1,1]/sum(cm[,1])
+acc_spec
+```
+A logistic regression was conducted to predict employee turnover based on job satisfaction and recruitment via employee referral. 
+Although the logistic regression model was statistically significant $\chi^2$(2, N = 538) = 14.33, p < .001, and explained 3% Nagelkerke $R^2$ of the variance in turnover, the model correctly classified 73.0% of cases in terms of overall accuracy, with a sensitivity of 32% and a specificity of 83%. Higher job satisfaction was associated with a decrease in the likelihood of turnover (OR = 0.43, 95% CI [0.27, 0.70]). Recruitment via employee referral was not significantly associated with turnover (OR = 0.53, 95% CI [0.21, 1.14]).
+
+```{r pred_probs}
+probs_df <- data_frame(
+  high_jobsat = c(0, 1, 0, 1),
+  refer = c(0, 0, 1, 1)
+)
+
+mod1_predict <- predict(mod1, newdata = probs_df, type = "response", se.fit = TRUE)
+
+probs_df <- probs_df %>%
+  mutate(turnover = mod1_predict$fit) %>%
+  mutate(ll.ci = mod1_predict$fit - (1.96 * mod1_predict$se.fit)) %>%
+  mutate(ul.ci = mod1_predict$fit + (1.96 * mod1_predict$se.fit)) %>%
+  mutate(category = case_when(
+    (high_jobsat == 0 & refer == 0) ~ "Low Job Satisfaction\nNot Employee Referral",
+    (high_jobsat == 1 & refer == 0) ~ "High Job Satisfaction\nNot Employee Referral",
+    (high_jobsat == 0 & refer == 1) ~ "Low Job Satisfaction\nEmployee Referral",
+    (high_jobsat == 1 & refer == 1) ~ "High Job Satisfaction\nEmployee Referral"
+  )) %>%
+  arrange(turnover) %>%
+  mutate(category = factor(category, levels = category)) %>%
+  mutate(label = paste0(floor(turnover*100+.5),"%"))
+probs_df
+```
+
+```{r plot}
+p <- ggplot(data=probs_df, aes(x=turnover, y=category))
+p <- p + geom_bar(stat="identity", width = 0.5, fill = "#336666")
+p <- p + geom_text(aes(label = label), hjust = -.2)
+p <- p + annotate("text", x = .35, y = 2.5, label = "@AJThurston", color = "#DDDDDD", size = 4)
+p <- p + scale_x_continuous(limits = c(0,.5))
+p <- p + scale_y_discrete()
+p <- p + labs(x = "Predicted Turnover Probability")
+p <- p + theme_void()
+p <- p + theme(
+  axis.title.x = element_text(),
+  axis.text.y = element_text(),
+  plot.margin = margin(1,0,1,1,"cm"))
+p
+```
+
+## Appendix
+
+Should include the continuous predicted probabilities as appendix in the final report so accuracy is maintained as in this exmaple: https://stats.oarc.ucla.edu/r/dae/logit-regression/
+
+```{r appendix}
+
+```
+
+## References
+
+Brooks, M. E., Dalal, D. K., & Nolan, K. P. (2014). Are common language effect sizes easier to understand than traditional effect sizes? *The Journal of Applied Psychology, 99*(2), 332–340. https://doi.org/10.1037/a0034745
+
+Hanel, P. H. P., & Mehler, D. M. A. (2019). Beyond reporting statistical significance: Identifying informative effect sizes to improve scientific communication. *Public Understanding of Science, 28*(4), 468–485.
+
+Zhang, D. C., & Wai, J. (2021). Malleability of Statistical Perception: Impact of Validity Presentation on College Admission Test Policy Preferences. *Collabra: Psychology, 7*(1). https://doi.org/10.1525/collabra.24087

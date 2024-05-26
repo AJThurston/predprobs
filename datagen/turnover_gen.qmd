@@ -1,0 +1,90 @@
+---
+title: "Capstone"
+author: "AJ Thurston"
+date: "2023-07-14"
+format: html
+editor: visual
+link-citations: true
+bibliography: references.bib
+---
+
+## Setup
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r setup}
+library(summarytools)
+library(tidyverse)
+library(foreign)
+library(lavaan)
+library(openxlsx)
+library(gtools)
+library(lm.beta)
+library(domir)
+```
+
+## Data Codebook
+reference	jobsat	turnover
+`refer`: Employee was referred by current employee\
+0. Not referred\
+1. Referred\
+-9. Decline to respond
+
+`jobsat`: Employee job satisfaction: Overall, I am satisfied with my job\
+1. Strongly disagree\
+2. Disagree\
+3. Neither agree nor disagree\
+4. Agree\
+5. Strongly agree\
+
+`turnover`: Whether or not the employee voluntarily turned over\
+0. Active employee\
+1. Voluntarily turnover\
+
+## Data Parameters
+
+```{r parameters}
+cor <- read.xlsx("cormat.xlsx", sheet = "cor", colNames = T) 
+cor[upper.tri(cor)] <- t(cor)[upper.tri(cor)] 
+cor <- as.matrix(cor)
+
+sd <- read.xlsx("cormat.xlsx", sheet = "sd", colNames = T) %>% 
+  as.matrix() %>% 
+  unlist() %>%
+  array() %>% 
+  
+  as.numeric()
+mu <- read.xlsx("cormat.xlsx", sheet = "mu", colNames = T) %>% as.matrix()%>%
+  unlist() %>%
+  array() %>%
+  as.numeric()
+
+cov <- cor2cov(cor,sd)
+cov <- cov + diag(ncol(cov))*0.1
+```
+
+## Data Generation
+
+```{r generation}
+set.seed("01234")
+df_raw <- MASS::mvrnorm(n = 538, mu = mu, Sigma = cov, tol = .2) %>%
+  as.data.frame()
+colnames(df_raw) <- colnames(cor)
+```
+
+## Data Recode
+
+```{r recode}
+df <- df_raw %>%
+  mutate(refer_f = (quantcut(refer,   q = c(0,mean(refer)+.05,1), labels = F)-2)*-1) %>%
+  mutate(jobsat_skewed = log10(max(jobsat+1) - jobsat)) %>%
+  mutate(jobsat_f= (cut(jobsat_skewed,  breaks = 5, labels = F))) %>%
+  mutate(turnover_f = (quantcut(turnover,   q = c(0,mean(turnover),1), labels = F)-2)*-1) %>%
+  select(refer_f,jobsat_f,turnover_f)
+
+freq(df)
+colnames(df) <- c("refer","jobsat","turnover")
+cor(df)
+
+write.csv(df, "turnover.csv", row.names = FALSE) 
+```
