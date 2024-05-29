@@ -54,7 +54,8 @@ sd <- read.xlsx("cormat.xlsx", sheet = "sd", colNames = T) %>%
   array() %>% 
   
   as.numeric()
-mu <- read.xlsx("cormat.xlsx", sheet = "mu", colNames = T) %>% as.matrix()%>%
+mu <- read.xlsx("cormat.xlsx", sheet = "mu", colNames = T) %>% 
+  as.matrix()%>%
   unlist() %>%
   array() %>%
   as.numeric()
@@ -67,17 +68,19 @@ cov <- cov + diag(ncol(cov))*0.1
 
 ```{r generation}
 set.seed("01234")
-df_raw <- MASS::mvrnorm(n = 538, mu = mu, Sigma = cov, tol = .2) %>%
+df_raw <- MASS::mvrnorm(n = 538, mu = mu, Sigma = cov, tol = .1) %>%
   as.data.frame()
 colnames(df_raw) <- colnames(cor)
 ```
 
 ## Data Recode
 
+I also wanted to skew the job satisfaction data more negatively and found some approaches here: https://www.datanovia.com/en/lessons/transform-data-to-normal-distribution-in-r/
+
 ```{r recode}
 df <- df_raw %>%
   mutate(refer_f = (quantcut(refer,   q = c(0,mean(refer)+.05,1), labels = F)-2)*-1) %>%
-  mutate(jobsat_skewed = log10(max(jobsat+1) - jobsat)) %>%
+  mutate(jobsat_skewed = sqrt(max(jobsat+1) - jobsat)) %>%
   mutate(jobsat_f= (cut(jobsat_skewed,  breaks = 5, labels = F))) %>%
   mutate(turnover_f = (quantcut(turnover,   q = c(0,mean(turnover),1), labels = F)-2)*-1) %>%
   select(refer_f,jobsat_f,turnover_f)
@@ -86,5 +89,5 @@ freq(df)
 colnames(df) <- c("refer","jobsat","turnover")
 cor(df)
 
-write.csv(df, "turnover.csv", row.names = FALSE) 
+write.csv(df, "/Users/ajthurston/Documents/GitHub/predprobs/turnover.csv", row.names = FALSE) 
 ```
